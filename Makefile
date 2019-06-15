@@ -22,5 +22,9 @@ test:
 	@java -jar jasmin.jar ${FNAME}.j
 	@java ${FNAME} 
 
+test2:
+	@./${PARSER} < ./example_input/basic_declaration.c
+
+
 clean:
 	rm -f *.o ${PARSER} ${OBJECT} 
