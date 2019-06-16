@@ -29,7 +29,7 @@
 
     void yyerror(char *s);
 
-    /* symbol table functions */
+    /* Symbol table functions */
     void create_symbol();
     void insert_symbol(symbol_t x);
     int lookup_symbol(char *str, int up_to_scope);
@@ -42,6 +42,7 @@
 
     /* code generation functions, just an example! */
     void gencode_function();
+    int lookup_symbol_index(char *str, int up_to_scope);
 
     /* global variables */
     table_t *t[32];                     // symbol table
@@ -55,6 +56,16 @@
     char type_stack[10][8];             // a stack to record types
     int stack_index = 0;
     char func_redecl[32];
+
+    /* gencode flags */
+    int gflag = -1;
+    int glo_var_assi_flag = 0;
+    char glo_var_value[16];
+    int loc_var_assi_flag = 0;
+    char loc_var_value[16];
+    int print_id_index;
+    int print_const_flag = 0;
+    char print_const_value[16];
 %}
 
 /* Use variable or self-defined structure to represent
@@ -118,8 +129,8 @@ program:
     ;
 
 external:
-      declaration
-    | func_def
+      declaration           { gflag = 0; }
+    | func_def              {  }
     ;
 
 declaration:
@@ -131,7 +142,7 @@ declaration:
                                   strcat(error_msg, $2);
                               }
                             } 
-      "="                   
+      "="                   { glo_var_assi_flag = 1; loc_var_assi_flag = 1; }
       initializer           
       SEMICOLON             { strcpy(reading.kind, "variable");
                               pop_type(); 
@@ -158,6 +169,7 @@ declaration:
                                   table_item_index[scope]++;
                                   insert_symbol(reading); 
                               }
+                              
                             }
     | type                  
       declarator            { scope++;
@@ -197,11 +209,11 @@ initializer:
     ;
 
 const: 
-      I_CONST               
-    | F_CONST               
-    | STR_CONST             
-    | TRUE
-    | FALSE
+      I_CONST               { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1); }
+    | F_CONST               { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1); }
+    | STR_CONST             { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1); }
+    | TRUE                  { strcpy(glo_var_value, "true"); strcpy(loc_var_value, "true"); strcpy(print_const_value, "true"); }
+    | FALSE                 { strcpy(glo_var_value, "false"); strcpy(loc_var_value, "false"); strcpy(print_const_value, "false"); }
     ;
 
 func_def:
@@ -224,6 +236,7 @@ func_def:
                                   insert_symbol(rfunc); 
                               }
                               strcpy(rfunc.attribute, "");
+                              gflag = 1;
                             }
       compound_stat         
     ;
@@ -289,7 +302,7 @@ block_item_list:
 
 block_item:
       stat
-    | declaration
+    | declaration           { gflag = 2; }
     ;
 
 stat:
@@ -406,8 +419,7 @@ argument_list_expr:
     ;
 
 primary_expr:
-      ID                    { //printf("expr %s\n", $1);
-                              if (!lookup_symbol($1, 0)) {
+      ID                    { if (!lookup_symbol($1, 0)) {
                                   error_type_flag = 1; 
                                   strcat(error_msg, "Undeclared variable ");
                                   strcat(error_msg, $1);
@@ -419,14 +431,20 @@ primary_expr:
     ;
 
 print_func:
-      PRINT "(" STR_CONST ")" SEMICOLON
-    | PRINT 
+      PRINT                 
+      "(" 
+      const                 { gflag = 3; print_const_flag = 1; }
+      ")" 
+      SEMICOLON
+    | PRINT                 
       "(" 
       ID ")" SEMICOLON      { if (!lookup_symbol($3, 0)) { 
                                   error_type_flag = 1; 
                                   strcat(error_msg, "Undeclared variable ");
                                   strcat(error_msg, $3);
-                              } 
+                              }
+                              gflag = 3; 
+                              print_id_index = lookup_symbol_index($3, 0);
                             }    
     ;
 
@@ -436,7 +454,7 @@ selection_stat:
     ;
 
 loop_stat:
-      WHILE              
+      WHILE                 
       "("                   
       expr
       ")"                   
@@ -461,11 +479,15 @@ int main(int argc, char** argv)
     file = fopen("compiler_hw3.j", "w");
 
     fprintf(file, ".class public compiler_hw3\n"
-                  ".super java/lang/Object\n"
-                  ".method public static main([Ljava/lang/String;)V\n");
+                  ".super java/lang/Object\n");
+    //              ".method public static main([Ljava/lang/String;)V\n");
 
     yyparse();
-    printf("\nTotal lines: %d \n", yylineno);
+
+    if (!syntax_error_flag) {
+        dump_symbol();                          // dump table[0]
+        printf("\nTotal lines: %d \n", yylineno);
+    }
 
     fprintf(file, "\treturn\n"
                   ".end method\n");
@@ -508,7 +530,7 @@ void yyerror(char *s)
     }
 }
 
-/* stmbol table functions */
+/* symbol table functions */
 void create_symbol() 
 {
     //puts("!!!!!!!!!!!!!!!!!!!!create_symbol");
@@ -574,6 +596,29 @@ int lookup_symbol(char *str, int up_to_scope)
         }
     }
     return 0;
+}
+
+/* return the index of variable `str`
+ * if it is not found, return -1
+ */
+int lookup_symbol_index(char *str, int up_to_scope) 
+{
+    int i;
+    symbol_t *p;
+    for ( i = scope; i >= up_to_scope ; i-- ) {
+        if (t[i] == NULL) {
+            continue;
+        }
+        for ( p = t[i]->head; p != NULL; p = p->next ) {
+            //printf("%s and %s\n", str, p->name);
+            if (strcmp(str, p->name) == 0) {
+                if (p->func_forward_def)
+                    return 100;
+                return p->index;
+            }
+        }
+    }
+    return -1;
 }
 
 void dump_symbol() 
@@ -682,9 +727,97 @@ void parse_newline()
     } 
 }
 
+symbol_t find_last(int find_scope)
+{
+    symbol_t *p;
+    /* move to the tail of the list */
+    for ( p = t[find_scope]->head; p->next != NULL; p = p->next ) 
+        ;
+    return *p;
+}
 
-/* code generation functions */
+
+
+/* code generation function
+ * 
+ * 0: global variables
+ * 1: function def
+ * 2: local variables
+ * 3: print
+ *
+ */
 void gencode_function() 
 {
+    if (gflag == 0) {
+        symbol_t node = find_last(scope);
+        fprintf(file, ".field public static ");
+        fprintf(file, "%s ", node.name);
 
+        if (strcmp(node.type, "int") == 0)
+            fprintf(file, "I");
+        else if (strcmp(node.type, "float") == 0)
+            fprintf(file, "F");
+        else if (strcmp(node.type, "bool") == 0)
+            fprintf(file, "Z");
+        if (glo_var_assi_flag) {
+            fprintf(file, " = %s", glo_var_value);
+            glo_var_assi_flag = 0;
+            strcpy(glo_var_value, "");
+        }
+        fprintf(file, "\n");
+    }
+    else if (gflag == 1) {
+        symbol_t node = find_last(0);
+        
+        
+        fprintf(file, ".method public static ");
+        fprintf(file, "%s", node.name); 
+        if (strcmp(node.name, "main") == 0)
+            fprintf(file, "([Ljava/lang/String;)");
+        //else if ()
+        //    printf
+
+        if (strcmp(node.type, "int") == 0)
+            fprintf(file, "I\n");
+        else if (strcmp(node.type, "float") == 0)
+            fprintf(file, "F\n");
+        else if (strcmp(node.type, "bool") == 0)
+            fprintf(file, "Z\n");
+        else if (strcmp(node.type, "void") == 0)
+            fprintf(file, "V\n");
+        
+        fprintf(file, ".limit stack 50\n"
+                      ".limit locals 50\n");
+
+    }
+    else if (gflag == 2) {
+        symbol_t node = find_last(scope);
+        if (loc_var_assi_flag) {
+            fprintf(file, "\tldc %s\n", loc_var_value);
+            
+                
+            loc_var_assi_flag = 0;
+
+        }
+        else
+            fprintf(file, "\tldc 0\n");       // defaut to init it to 0
+        fprintf(file, "\tistore %d\n", node.index);
+
+    }
+    else if (gflag == 3) {
+        if (print_const_flag) {
+            fprintf(file, "\tldc %s\n", print_const_value);
+            print_const_flag = 0;
+        }
+        else
+            fprintf(file, "\tiload %d\n", print_id_index);
+        fprintf(file, "\tgetstatic java/lang/System/out Ljava/io/PrintStream;\n"
+	                  "\tswap\n"
+	                  "\tinvokevirtual java/io/PrintStream/println");
+        fprintf(file, "(I)");
+        fprintf(file, "V\n");
+    }
+
+
+    gflag = -1;
 }

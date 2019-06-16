@@ -4,6 +4,7 @@
 
     extern YYSTYPE yylval; //YYSTYPE
     extern void parse_newline();
+    extern void gencode_function();
 
     char code_line[256];
     int rcb_flag = 0;
@@ -112,10 +113,10 @@ id          {letter}+({letter}|{digit})*
  /* others */
 
 ";"                 { strcat(code_line, yytext); return SEMICOLON; }
-[\n]                { parse_newline(); }
+[\n]                { parse_newline(); gencode_function(); }
 [ \t]               { strcat(code_line, yytext); } /* Ignore */
 [^ \t\n]            { } /* Ignore other charactor sets */
-<<EOF>>             { static int once = 0; return once++ ? 0 : SEMICOLON; }
+<<EOF>>             { yyterminate(); static int once = 0; return once++ ? 0 : SEMICOLON; }
 
 %%
 
