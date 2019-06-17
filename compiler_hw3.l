@@ -87,9 +87,9 @@ id          {letter}+({letter}|{digit})*
 "return"    { strcat(code_line, yytext); return RETURN; }
 
  /* String Constant */
-\"                      { strcat(code_line, yytext); BEGIN STRING_STATE; return STR_CONST; }
+\"                      { strcat(code_line, yytext); BEGIN STRING_STATE; }
 <STRING_STATE>\"        { strcat(code_line, yytext); BEGIN INITIAL; }
-<STRING_STATE>[^"]*     { strcat(code_line, yytext); }
+<STRING_STATE>[^"]*     { strcat(code_line, yytext); strcpy(yylval.string, yytext); return STR_CONST;  }
 
  /* Number Constant */
 {integer}           { strcat(code_line, yytext); yylval.string = yytext; return I_CONST; }

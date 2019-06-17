@@ -42,7 +42,8 @@
 
     /* code generation functions, just an example! */
     void gencode_function();
-    int lookup_symbol_index(char *str, int up_to_scope);
+    symbol_t find_last(int find_scope);
+    symbol_t find_symbol(char *str, int up_to_scope);
 
     /* global variables */
     table_t *t[32];                     // symbol table
@@ -60,12 +61,14 @@
     /* gencode flags */
     int gflag = -1;
     int glo_var_assi_flag = 0;
-    char glo_var_value[16];
+    char glo_var_value[64];
     int loc_var_assi_flag = 0;
-    char loc_var_value[16];
+    char loc_var_value[64];
     int print_id_index;
+    char print_id_type[8];
     int print_const_flag = 0;
-    char print_const_value[16];
+    char print_const_value[64];
+    char print_const_type[32];
 %}
 
 /* Use variable or self-defined structure to represent
@@ -209,9 +212,12 @@ initializer:
     ;
 
 const: 
-      I_CONST               { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1); }
-    | F_CONST               { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1); }
-    | STR_CONST             { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1); }
+      I_CONST               { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1);
+                              strcpy(print_const_type, "I"); }
+    | F_CONST               { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1);
+                              strcpy(print_const_type, "F"); }
+    | STR_CONST             { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1); 
+                              strcpy(print_const_type, "Ljava/lang/String;"); }
     | TRUE                  { strcpy(glo_var_value, "true"); strcpy(loc_var_value, "true"); strcpy(print_const_value, "true"); }
     | FALSE                 { strcpy(glo_var_value, "false"); strcpy(loc_var_value, "false"); strcpy(print_const_value, "false"); }
     ;
@@ -443,8 +449,12 @@ print_func:
                                   strcat(error_msg, "Undeclared variable ");
                                   strcat(error_msg, $3);
                               }
-                              gflag = 3; 
-                              print_id_index = lookup_symbol_index($3, 0);
+                              else {
+                                  gflag = 3;
+                                  symbol_t node = find_symbol($3, 0);
+                                  print_id_index = node.index;
+                                  strcpy(print_id_type, node.type);
+                              }
                             }    
     ;
 
@@ -462,7 +472,7 @@ loop_stat:
     ;
 
 jump_stat:
-      RETURN SEMICOLON
+      RETURN SEMICOLON      { }
     | RETURN expr SEMICOLON
     ;
 
@@ -598,13 +608,13 @@ int lookup_symbol(char *str, int up_to_scope)
     return 0;
 }
 
-/* return the index of variable `str`
- * if it is not found, return -1
+/* return the symbol `str` in the table
+ * if it is not found, return empty
  */
-int lookup_symbol_index(char *str, int up_to_scope) 
+symbol_t find_symbol(char *str, int up_to_scope) 
 {
     int i;
-    symbol_t *p;
+    symbol_t *p, empty;
     for ( i = scope; i >= up_to_scope ; i-- ) {
         if (t[i] == NULL) {
             continue;
@@ -612,13 +622,13 @@ int lookup_symbol_index(char *str, int up_to_scope)
         for ( p = t[i]->head; p != NULL; p = p->next ) {
             //printf("%s and %s\n", str, p->name);
             if (strcmp(str, p->name) == 0) {
-                if (p->func_forward_def)
-                    return 100;
-                return p->index;
+                //if (p->func_forward_def)
+                //    return 100;
+                return *p;
             }
         }
     }
-    return -1;
+    return empty;
 }
 
 void dump_symbol() 
@@ -793,29 +803,69 @@ void gencode_function()
     else if (gflag == 2) {
         symbol_t node = find_last(scope);
         if (loc_var_assi_flag) {
-            fprintf(file, "\tldc %s\n", loc_var_value);
+
+            if (strcmp(node.type, "string") == 0)
+                fprintf(file, "\tldc \"%s\"\n", loc_var_value);
+            else
+                fprintf(file, "\tldc %s\n", loc_var_value);
             
                 
             loc_var_assi_flag = 0;
-
         }
-        else
-            fprintf(file, "\tldc 0\n");       // defaut to init it to 0
-        fprintf(file, "\tistore %d\n", node.index);
+        else {
+            if (strcmp(node.type, "int") == 0)
+                fprintf(file, "\tldc 0\n");         // defaut to init it to 0
+            else if (strcmp(node.type, "float") == 0)
+                fprintf(file, "\tldc 0.0\n");       // defaut to init it to 0.0
+        }
+        if (strcmp(node.type, "int") == 0)    
+            fprintf(file, "\tistore %d\n", node.index);
+        else if (strcmp(node.type, "float") == 0)
+            fprintf(file, "\tfstore %d\n", node.index);
+        else if (strcmp(node.type, "string") == 0)
+            fprintf(file, "\tastore %d\n", node.index);
 
     }
     else if (gflag == 3) {
         if (print_const_flag) {
-            fprintf(file, "\tldc %s\n", print_const_value);
-            print_const_flag = 0;
-        }
-        else
-            fprintf(file, "\tiload %d\n", print_id_index);
-        fprintf(file, "\tgetstatic java/lang/System/out Ljava/io/PrintStream;\n"
+            if (strcmp(print_const_type, "Ljava/lang/String;") == 0) {
+                //printf("~~~~~~~~~~%s\n", print_const_value);
+                fprintf(file, "\tldc \"%s\"\n", print_const_value);
+            }
+            else
+                fprintf(file, "\tldc %s\n", print_const_value);
+            fprintf(file, "\tgetstatic java/lang/System/out Ljava/io/PrintStream;\n"
 	                  "\tswap\n"
 	                  "\tinvokevirtual java/io/PrintStream/println");
-        fprintf(file, "(I)");
-        fprintf(file, "V\n");
+            fprintf(file, "(%s)", print_const_type);
+            fprintf(file, "V\n");
+            print_const_flag = 0;
+        }
+        else {
+            
+            if (strcmp(print_id_type, "int") == 0) {
+                fprintf(file, "\tiload %d\n", print_id_index);
+                fprintf(file, "\tgetstatic java/lang/System/out Ljava/io/PrintStream;\n"
+                              "\tswap\n"
+                              "\tinvokevirtual java/io/PrintStream/println");
+                fprintf(file, "(I)");
+            }
+            else if (strcmp(print_id_type, "float") == 0) {
+                fprintf(file, "\tfload %d\n", print_id_index);
+                fprintf(file, "\tgetstatic java/lang/System/out Ljava/io/PrintStream;\n"
+                              "\tswap\n"
+                              "\tinvokevirtual java/io/PrintStream/println");
+                fprintf(file, "(F)");
+            }
+            else if (strcmp(print_id_type, "string") == 0) {
+                fprintf(file, "\taload %d\n", print_id_index);
+                fprintf(file, "\tgetstatic java/lang/System/out Ljava/io/PrintStream;\n"
+                              "\tswap\n"
+                              "\tinvokevirtual java/io/PrintStream/println");
+                fprintf(file, "(Ljava/lang/String;)");
+            }
+            fprintf(file, "V\n");
+        }
     }
 
 
