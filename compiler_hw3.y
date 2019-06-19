@@ -76,6 +76,7 @@
     int expr_queue_index = 0;
     char expr_const[32];
     char expr_buf[128];
+    int expr_fmode = 0;
 
 %}
 
@@ -225,7 +226,7 @@ const:
                               strcpy(expr_const, "I"); strcat(expr_const, $1); }
     | F_CONST               { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1);
                               strcpy(print_const_type, "F"); 
-                              strcpy(expr_const, "F"); strcat(expr_const, $1); }
+                              strcpy(expr_const, "F"); strcat(expr_const, $1); expr_fmode = 1; }
     | STR_CONST             { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1); 
                               strcpy(print_const_type, "Ljava/lang/String;"); }
     | TRUE                  { strcpy(glo_var_value, "1"); strcpy(loc_var_value, "1"); strcpy(print_const_value, "1"); }
@@ -448,6 +449,9 @@ primary_expr:
                                   strcat(expr_buf, "V");
                                   strcat(expr_buf, $1);
                                   strcat(expr_buf, " ");
+                                  symbol_t node = find_symbol($1, 0);
+                                  if (strcmp(node.type, "float") == 0)
+                                      expr_fmode = 1;
                               } 
                             }
     | const                 { gflag = 6; 
@@ -947,12 +951,13 @@ void gencode_function()
         char record[32];
         char action = ' ', c;
         char assi_var[32];
+        symbol_t node;
         int i, len = strlen(expr_buf);
 
         for (i = 0; i < len; i++) {
             c = expr_buf[i];
-            if (expr_buf[i] == 'I') {
-                action = 'I';
+            if (c == 'I' || c == 'F') {
+                action = c;
                 record_flag = 1;
                 continue;
             }
@@ -979,6 +984,11 @@ void gencode_function()
             if (action_flag) {
                 if (action == 'I') {
                     fprintf(file, "\tldc %s\n", record);
+                    if (expr_fmode)
+                        fprintf(file, "\ti2f\n");
+                }
+                else if (action == 'F') {
+                    fprintf(file, "\tldc %s\n", record);
                 }
                 else if (action == 'V') {
                     
@@ -986,24 +996,55 @@ void gencode_function()
                         assi_flag = 1;
                         strcpy(assi_var, record);
                     }
+                    else {
+                        node = find_symbol(record, scope);
+
+                        if (strcmp(node.type, "int") == 0) {
+                            fprintf(file, "\tiload %d\n", node.index);
+                            if (expr_fmode)
+                                fprintf(file, "\ti2f\n");
+                        }
+                        else if (strcmp(node.type, "float") == 0)
+                            fprintf(file, "\tfload %d\n", node.index);
+                    }
 
                 }
                 action_flag = 0;
             }
-            if (c == '+') {
-                fprintf(file, "\tiadd\n");
+
+            if (expr_fmode) {
+                if (c == '+') {
+                    fprintf(file, "\tfadd\n");
+                }
+                else if (c == '-') {
+                    fprintf(file, "\tfsub\n");
+                }
+                else if (c == '*') {
+                    fprintf(file, "\tfmul\n");
+                }
+                else if (c == '/') {
+                    fprintf(file, "\tfdiv\n");
+                }
+                else if (c == '%') {
+                    yyerror("mod float");
+                }
             }
-            else if (c == '-') {
-                fprintf(file, "\tisub\n");
-            }
-            else if (c == '*') {
-                fprintf(file, "\timul\n");
-            }
-            else if (c == '/') {
-                fprintf(file, "\tidiv\n");
-            }
-            else if (c == '%') {
-                fprintf(file, "\tirem\n");
+            else {
+                if (c == '+') {
+                    fprintf(file, "\tiadd\n");
+                }
+                else if (c == '-') {
+                    fprintf(file, "\tisub\n");
+                }
+                else if (c == '*') {
+                    fprintf(file, "\timul\n");
+                }
+                else if (c == '/') {
+                    fprintf(file, "\tidiv\n");
+                }
+                else if (c == '%') {
+                    fprintf(file, "\tirem\n");
+                }
             }
 
         } //end for
@@ -1011,8 +1052,16 @@ void gencode_function()
         if (assi_flag) {
             symbol_t node = find_symbol(assi_var, scope);
 
-            if (strcpy(node.type, "int"))
+            if (strcmp(node.type, "int") == 0) {
+                if (expr_fmode)
+                    fprintf(file, "\tf2i\n");
                 fprintf(file, "\tistore %d\n", node.index);
+            }
+            else if (strcmp(node.type, "float") == 0) {
+                if (!expr_fmode)
+                    fprintf(file, "\ti2f\n");
+                fprintf(file, "\tfstore %d\n", node.index);
+            }
 
             assi_flag = 0;
         }
