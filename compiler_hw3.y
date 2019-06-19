@@ -77,7 +77,7 @@
     char expr_const[32];
     char expr_buf[128];
     int expr_fmode = 0;
-
+    int assi_flag = 0;      //used in expr
 %}
 
 /* Use variable or self-defined structure to represent
@@ -337,7 +337,7 @@ expression_stat:
     ;
 
 expr:
-      assign_expr           {  }
+      assign_expr           { gflag = 6; }
     | expr "," assign_expr
     ;
 
@@ -347,12 +347,12 @@ assign_expr:
     ;
 
 assign_op:
-      "="                   { expr_flag[17] = 1; strcat(expr_buf, "= "); }
-    | MULASGN               { expr_flag[18] = 1; }
-    | DIVASGN               { expr_flag[19] = 1; }
-    | MODASGN               { expr_flag[20] = 1; }
-    | ADDASGN               { expr_flag[21] = 1; }
-    | SUBASGN               { expr_flag[22] = 1; }
+      "="                   { expr_flag[17] = 1; strcat(expr_buf, "= "); assi_flag = 1; }
+    | MULASGN               { expr_flag[18] = 1; strcat(expr_buf, "*= "); assi_flag = 4; }
+    | DIVASGN               { expr_flag[19] = 1; strcat(expr_buf, "/= "); assi_flag = 5; }
+    | MODASGN               { expr_flag[20] = 1; strcat(expr_buf, "%= "); assi_flag = 6; }
+    | ADDASGN               { expr_flag[21] = 1; strcat(expr_buf, "+= "); assi_flag = 2; }
+    | SUBASGN               { expr_flag[22] = 1; strcat(expr_buf, "-= "); assi_flag = 3; }
     ;
 
 conditional_expr:
@@ -417,8 +417,8 @@ unary_operator:
 
 postfix_expression:
       primary_expr
-    | postfix_expression INC
-    | postfix_expression DEC
+    | postfix_expression INC    { strcat(expr_buf, "++ "); }
+    | postfix_expression DEC    { strcat(expr_buf, "-- "); }
     | postfix_expression 
       "(" ")"               { strcpy(error_msg, ""); 
                               strcat(error_msg, "Undeclared function "); 
@@ -443,7 +443,7 @@ primary_expr:
                                   strcpy(func_redecl, $1);
                               }
                               else {
-                                  gflag = 6;
+                                  //gflag = 6;
                                   strcpy(expr_queue[expr_queue_index], $1);
                                   expr_queue_index++;
                                   strcat(expr_buf, "V");
@@ -454,7 +454,7 @@ primary_expr:
                                       expr_fmode = 1;
                               } 
                             }
-    | const                 { gflag = 6; 
+    | const                 { //gflag = 6; 
                               strcpy(expr_queue[expr_queue_index], expr_const);
                               expr_queue_index++;
                               strcat(expr_buf, expr_const);
@@ -946,32 +946,40 @@ void gencode_function()
     else if (gflag == 6) {
         printf("%s\n", expr_buf);
 
-        int record_flag = 0, action_flag = 0, assi_flag = 0;
+        int record_flag = 0, action_flag = 0, recognition_flag = 1;
         int j = 0;
         char record[32];
-        char action = ' ', c;
+        char action = ' ', c, c_next;
         char assi_var[32];
         symbol_t node;
         int i, len = strlen(expr_buf);
 
         for (i = 0; i < len; i++) {
             c = expr_buf[i];
-            if (c == 'I' || c == 'F') {
-                action = c;
-                record_flag = 1;
-                continue;
-            }
-            else if (c == 'V') {
-                action = 'V';
-                record_flag = 1;
-                continue;
+            c_next = expr_buf[i+1];
+
+            if (recognition_flag) {
+                if (c == 'I' || c == 'F') {
+                    action = c;
+                    record_flag = 1;
+                    recognition_flag = 0;
+                    continue;
+                }
+                if (c == 'V') {
+                    action = 'V';
+                    record_flag = 1;
+                    recognition_flag = 0;
+                    continue;
+                }
             }
 
 
             if (record_flag) {
+                /* encounter a white space, go to action section */
                 if (expr_buf[i] == ' ') {
                     record[j] = '\0';
                     j = 0;
+                    recognition_flag = 1;
                     record_flag = 0;
                     action_flag = 1;
                 }
@@ -992,9 +1000,21 @@ void gencode_function()
                 }
                 else if (action == 'V') {
                     
-                    if (expr_buf[i+1] == '=') {
-                        assi_flag = 1;
+                    if (c_next == '=') {
+                        //assi_flag = 1;
                         strcpy(assi_var, record);
+                    }
+                    /* += -= *= /= %= */
+                    else if (expr_buf[i+2] == '=') {
+                        strcpy(assi_var, record);
+                        symbol_t node = find_symbol(assi_var, 1);
+
+                        if (strcmp(node.type, "int") == 0) {
+                            fprintf(file, "\tiload %d\n", node.index);
+                        }
+                        else if (strcmp(node.type, "float") == 0) {
+                            fprintf(file, "\tfload %d\n", node.index);
+                        }
                     }
                     else {
                         node = find_symbol(record, scope);
@@ -1012,45 +1032,112 @@ void gencode_function()
                 action_flag = 0;
             }
 
+            
             if (expr_fmode) {
-                if (c == '+') {
+                if (c == '+' && c_next == ' ') {
                     fprintf(file, "\tfadd\n");
                 }
-                else if (c == '-') {
+                else if (c == '-' && c_next == ' ') {
                     fprintf(file, "\tfsub\n");
                 }
-                else if (c == '*') {
+                else if (c == '*' && c_next == ' ') {
                     fprintf(file, "\tfmul\n");
                 }
-                else if (c == '/') {
+                else if (c == '/' && c_next == ' ') {
                     fprintf(file, "\tfdiv\n");
                 }
-                else if (c == '%') {
+                else if (c == '%' && c_next == ' ') {
                     yyerror("mod float");
                 }
             }
             else {
-                if (c == '+') {
+                if (c == '+' && c_next == ' ') {
                     fprintf(file, "\tiadd\n");
                 }
-                else if (c == '-') {
+                else if (c == '-' && c_next == ' ') {
                     fprintf(file, "\tisub\n");
                 }
-                else if (c == '*') {
+                else if (c == '*' && c_next == ' ') {
                     fprintf(file, "\timul\n");
                 }
-                else if (c == '/') {
+                else if (c == '/' && c_next == ' ') {
                     fprintf(file, "\tidiv\n");
                 }
-                else if (c == '%') {
+                else if (c == '%' && c_next == ' ') {
                     fprintf(file, "\tirem\n");
                 }
             }
-
+            
+            /* post ++, -- */
+            if (c == '+' && c_next == '+') {
+                if (strcmp(node.type, "int") == 0) {
+                    fprintf(file, "\tiload %d\n", node.index);
+                    fprintf(file, "\tldc 1\n");
+                    fprintf(file, "\tiadd\n");
+                    fprintf(file, "\tistore %d\n", node.index);
+                }
+                else if (strcmp(node.type, "float") == 0) {
+                    fprintf(file, "\tfload %d\n", node.index);
+                    fprintf(file, "\tldc 1.0\n");
+                    fprintf(file, "\tfadd\n");
+                    fprintf(file, "\tfstore %d\n", node.index);
+                }
+                i++; // increment two !!
+            }
+            else if (c == '-' && c_next == '-') {
+                if (strcmp(node.type, "int") == 0) {
+                    fprintf(file, "\tiload %d\n", node.index);
+                    fprintf(file, "\tldc 1\n");
+                    fprintf(file, "\tisub\n");
+                    fprintf(file, "\tistore %d\n", node.index);
+                }
+                else if (strcmp(node.type, "float") == 0) {
+                    fprintf(file, "\tfload %d\n", node.index);
+                    fprintf(file, "\tldc 1.0\n");
+                    fprintf(file, "\tfsub\n");
+                    fprintf(file, "\tfstore %d\n", node.index);
+                }
+                i++; // increment two !!
+            }
         } //end for
 
         if (assi_flag) {
             symbol_t node = find_symbol(assi_var, scope);
+
+            if (expr_fmode) {
+                if (assi_flag == 2) {
+                    fprintf(file, "\tfadd\n");
+                }
+                else if (assi_flag == 3) {
+                    fprintf(file, "\tfsub\n");
+                }
+                else if (assi_flag == 4) {
+                    fprintf(file, "\tfmul\n");
+                }
+                else if (assi_flag == 5) {
+                    fprintf(file, "\tfdiv\n");
+                }
+                else if (assi_flag == 6) {
+                    yyerror("mod float");
+                }
+            }
+            else {
+                if (assi_flag == 2) {
+                    fprintf(file, "\tiadd\n");
+                }
+                else if (assi_flag == 3) {
+                    fprintf(file, "\tisub\n");
+                }
+                else if (assi_flag == 4) {
+                    fprintf(file, "\timul\n");
+                }
+                else if (assi_flag == 5) {
+                    fprintf(file, "\tidiv\n");
+                }
+                else if (assi_flag == 6) {
+                    fprintf(file, "\tirem\n");
+                }
+            }
 
             if (strcmp(node.type, "int") == 0) {
                 if (expr_fmode)
@@ -1064,10 +1151,11 @@ void gencode_function()
             }
 
             assi_flag = 0;
-        }
+            expr_fmode = 0;
+        } //end if (assi_flag)
 
         strcpy(expr_buf, "");
-    }
+    } // end if (gflag == 6)
 
 
     gflag = -1;
