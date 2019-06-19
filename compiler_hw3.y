@@ -44,6 +44,7 @@
     void gencode_function();
     symbol_t find_last(int find_scope);
     symbol_t find_symbol(char *str, int up_to_scope);
+    void parse_func_attr(char *s, char r[]);
 
     /* global variables */
     table_t *t[32];                     // symbol table
@@ -69,6 +70,13 @@
     int print_const_flag = 0;
     char print_const_value[64];
     char print_const_type[32];
+    int return_void_flag = 0;
+    int expr_flag[23] = {0};
+    char expr_queue[32][32];
+    int expr_queue_index = 0;
+    char expr_const[32];
+    char expr_buf[128];
+
 %}
 
 /* Use variable or self-defined structure to represent
@@ -213,13 +221,15 @@ initializer:
 
 const: 
       I_CONST               { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1);
-                              strcpy(print_const_type, "I"); }
+                              strcpy(print_const_type, "I"); 
+                              strcpy(expr_const, "I"); strcat(expr_const, $1); }
     | F_CONST               { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1);
-                              strcpy(print_const_type, "F"); }
+                              strcpy(print_const_type, "F"); 
+                              strcpy(expr_const, "F"); strcat(expr_const, $1); }
     | STR_CONST             { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1); 
                               strcpy(print_const_type, "Ljava/lang/String;"); }
-    | TRUE                  { strcpy(glo_var_value, "true"); strcpy(loc_var_value, "true"); strcpy(print_const_value, "true"); }
-    | FALSE                 { strcpy(glo_var_value, "false"); strcpy(loc_var_value, "false"); strcpy(print_const_value, "false"); }
+    | TRUE                  { strcpy(glo_var_value, "1"); strcpy(loc_var_value, "1"); strcpy(print_const_value, "1"); }
+    | FALSE                 { strcpy(glo_var_value, "0"); strcpy(loc_var_value, "0"); strcpy(print_const_value, "0"); }
     ;
 
 func_def:
@@ -295,10 +305,10 @@ parameters:
 
 compound_stat:
       "{"                   
-      "}"                   
+      "}"                   { gflag = 5; }
     | "{"                   { scope++; }
       block_item_list 
-      "}"                   
+      "}"                   { gflag = 5; }
     ;
 
 block_item_list:
@@ -326,7 +336,7 @@ expression_stat:
     ;
 
 expr:
-      assign_expr
+      assign_expr           {  }
     | expr "," assign_expr
     ;
 
@@ -336,12 +346,12 @@ assign_expr:
     ;
 
 assign_op:
-      "="
-    | MULASGN
-    | DIVASGN
-    | MODASGN
-    | ADDASGN
-    | SUBASGN
+      "="                   { expr_flag[17] = 1; strcat(expr_buf, "= "); }
+    | MULASGN               { expr_flag[18] = 1; }
+    | DIVASGN               { expr_flag[19] = 1; }
+    | MODASGN               { expr_flag[20] = 1; }
+    | ADDASGN               { expr_flag[21] = 1; }
+    | SUBASGN               { expr_flag[22] = 1; }
     ;
 
 conditional_expr:
@@ -350,40 +360,40 @@ conditional_expr:
 
 logical_or_expr:
       logical_and_expr
-    | logical_or_expr OR logical_and_expr
+    | logical_or_expr OR logical_and_expr               { expr_flag[16] = 1; }
     ;
 
 logical_and_expr:
       equality_expression
-    | logical_and_expr AND equality_expression
+    | logical_and_expr AND equality_expression          { expr_flag[15] = 1; }
     ;
 
 equality_expression:
       relational_expression
-    | equality_expression EQ relational_expression
-    | equality_expression NE relational_expression
+    | equality_expression EQ relational_expression      { expr_flag[13] = 1; }
+    | equality_expression NE relational_expression      { expr_flag[14] = 1; }
     ;
 
 relational_expression:
       additive_expression
-    | relational_expression "<" additive_expression
-    | relational_expression ">" additive_expression
-    | relational_expression LTE additive_expression
-    | relational_expression MTE additive_expression
+    | relational_expression "<" additive_expression     { expr_flag[9] = 1; }
+    | relational_expression ">" additive_expression     { expr_flag[10] = 1; }
+    | relational_expression LTE additive_expression     { expr_flag[11] = 1; }
+    | relational_expression MTE additive_expression     { expr_flag[12] = 1; }
     ;
 
 additive_expression:
       multiplicative_expression
-    | additive_expression "+" multiplicative_expression
-    | additive_expression "-" multiplicative_expression
+    | additive_expression "+" multiplicative_expression { expr_flag[7] = 1; strcat(expr_buf, "+ "); }
+    | additive_expression "-" multiplicative_expression { expr_flag[8] = 1; strcat(expr_buf, "- "); }
     ;
 
 
 multiplicative_expression:
       cast_expression
-    | multiplicative_expression "*" cast_expression
-    | multiplicative_expression "/" cast_expression
-    | multiplicative_expression "%" cast_expression
+    | multiplicative_expression "*" cast_expression     { expr_flag[4] = 1; strcat(expr_buf, "* "); }
+    | multiplicative_expression "/" cast_expression     { expr_flag[5] = 1; strcat(expr_buf, "/ "); }
+    | multiplicative_expression "%" cast_expression     { expr_flag[6] = 1; strcat(expr_buf, "% "); }
     ;
 
 cast_expression:
@@ -393,14 +403,14 @@ cast_expression:
 
 unary_expression:
       postfix_expression
-    | INC unary_expression
-    | DEC unary_expression
+    | INC unary_expression  { expr_flag[2] = 1; }
+    | DEC unary_expression  { expr_flag[3] = 1; }
     | unary_operator cast_expression
     ;
 
 unary_operator:
-      "+"
-    | "-"
+      "+"                   { expr_flag[0] = 1; }
+    | "-"                   { expr_flag[1] = 1; }
     | "!"
     ;
 
@@ -430,10 +440,25 @@ primary_expr:
                                   strcat(error_msg, "Undeclared variable ");
                                   strcat(error_msg, $1);
                                   strcpy(func_redecl, $1);
+                              }
+                              else {
+                                  gflag = 6;
+                                  strcpy(expr_queue[expr_queue_index], $1);
+                                  expr_queue_index++;
+                                  strcat(expr_buf, "V");
+                                  strcat(expr_buf, $1);
+                                  strcat(expr_buf, " ");
                               } 
                             }
-    | const
-    | "(" expr ")"
+    | const                 { gflag = 6; 
+                              strcpy(expr_queue[expr_queue_index], expr_const);
+                              expr_queue_index++;
+                              strcat(expr_buf, expr_const);
+                              strcat(expr_buf, " ");
+                            }
+    | "("                   { strcat(expr_buf, "( "); }
+      expr 
+      ")"                   { strcat(expr_buf, ") "); }
     ;
 
 print_func:
@@ -472,8 +497,8 @@ loop_stat:
     ;
 
 jump_stat:
-      RETURN SEMICOLON      { }
-    | RETURN expr SEMICOLON
+      RETURN SEMICOLON      { gflag = 4; return_void_flag = 1; }
+    | RETURN expr SEMICOLON { gflag = 4; }
     ;
 
 %%
@@ -499,8 +524,7 @@ int main(int argc, char** argv)
         printf("\nTotal lines: %d \n", yylineno);
     }
 
-    fprintf(file, "\treturn\n"
-                  ".end method\n");
+    //fprintf(file, ".end method\n");
 
     fclose(file);
 
@@ -746,7 +770,21 @@ symbol_t find_last(int find_scope)
     return *p;
 }
 
+void parse_func_attr(char *s, char r[])
+{
+    int i, j = 1;
+    int c = 'A' - 'a';
 
+    r[0] = *s + c;
+
+    for (i = 1; *(s+i) != '\0'; i++) {
+        if (*(s+i) == ',') {
+            r[j] = *(s+i+2) + c;
+            j++;
+        }
+    }
+    r[j] = '\0';
+}
 
 /* code generation function
  * 
@@ -754,7 +792,9 @@ symbol_t find_last(int find_scope)
  * 1: function def
  * 2: local variables
  * 3: print
- *
+ * 4: return
+ * 5: end function
+ * 6: expr
  */
 void gencode_function() 
 {
@@ -778,15 +818,18 @@ void gencode_function()
     }
     else if (gflag == 1) {
         symbol_t node = find_last(0);
-        
+        char func_para_type[16];
         
         fprintf(file, ".method public static ");
-        fprintf(file, "%s", node.name); 
+        fprintf(file, "%s", node.name);
+
         if (strcmp(node.name, "main") == 0)
             fprintf(file, "([Ljava/lang/String;)");
-        //else if ()
-        //    printf
-
+        else {
+            parse_func_attr(node.attribute, func_para_type);
+            fprintf(file, "(%s)", func_para_type);
+        }
+        
         if (strcmp(node.type, "int") == 0)
             fprintf(file, "I\n");
         else if (strcmp(node.type, "float") == 0)
@@ -798,7 +841,6 @@ void gencode_function()
         
         fprintf(file, ".limit stack 50\n"
                       ".limit locals 50\n");
-
     }
     else if (gflag == 2) {
         symbol_t node = find_last(scope);
@@ -824,6 +866,8 @@ void gencode_function()
             fprintf(file, "\tfstore %d\n", node.index);
         else if (strcmp(node.type, "string") == 0)
             fprintf(file, "\tastore %d\n", node.index);
+        else if (strcmp(node.type, "bool") == 0)
+            fprintf(file, "\tistore %d\n", node.index);
 
     }
     else if (gflag == 3) {
@@ -866,6 +910,114 @@ void gencode_function()
             }
             fprintf(file, "V\n");
         }
+    }
+    else if (gflag == 4) {
+        symbol_t node;
+        node = find_last(0);
+        
+        if (strcmp(node.type, "void") == 0) {
+            if (return_void_flag) {
+                fprintf(file, "\treturn\n");
+                return_void_flag = 0;
+            }
+            else
+                printf("this should not happen...\n");
+        }
+        else if (strcmp(node.type, "int") == 0) {
+            fprintf(file, "\tireturn\n");
+        }
+        else if (strcmp(node.type, "float") == 0) {
+            fprintf(file, "\tfreturn\n");
+        }
+        else if (strcmp(node.type, "bool") == 0) {
+            fprintf(file, "\tireturn\n");
+        }
+
+        
+    }
+    else if (gflag == 5) {
+        if (scope == 0)
+            fprintf(file, ".end method\n");
+    }
+    else if (gflag == 6) {
+        printf("%s\n", expr_buf);
+
+        int record_flag = 0, action_flag = 0, assi_flag = 0;
+        int j = 0;
+        char record[32];
+        char action = ' ', c;
+        char assi_var[32];
+        int i, len = strlen(expr_buf);
+
+        for (i = 0; i < len; i++) {
+            c = expr_buf[i];
+            if (expr_buf[i] == 'I') {
+                action = 'I';
+                record_flag = 1;
+                continue;
+            }
+            else if (c == 'V') {
+                action = 'V';
+                record_flag = 1;
+                continue;
+            }
+
+
+            if (record_flag) {
+                if (expr_buf[i] == ' ') {
+                    record[j] = '\0';
+                    j = 0;
+                    record_flag = 0;
+                    action_flag = 1;
+                }
+                else {
+                    record[j] = expr_buf[i];
+                    j++;
+                }
+            }
+
+            if (action_flag) {
+                if (action == 'I') {
+                    fprintf(file, "\tldc %s\n", record);
+                }
+                else if (action == 'V') {
+                    
+                    if (expr_buf[i+1] == '=') {
+                        assi_flag = 1;
+                        strcpy(assi_var, record);
+                    }
+
+                }
+                action_flag = 0;
+            }
+            if (c == '+') {
+                fprintf(file, "\tiadd\n");
+            }
+            else if (c == '-') {
+                fprintf(file, "\tisub\n");
+            }
+            else if (c == '*') {
+                fprintf(file, "\timul\n");
+            }
+            else if (c == '/') {
+                fprintf(file, "\tidiv\n");
+            }
+            else if (c == '%') {
+                fprintf(file, "\tirem\n");
+            }
+
+        } //end for
+
+        if (assi_flag) {
+            symbol_t node = find_symbol(assi_var, scope);
+
+            if (strcpy(node.type, "int"))
+                fprintf(file, "\tistore %d\n", node.index);
+
+            assi_flag = 0;
+        }
+
+        strcpy(expr_buf, "");
     }
 
 
