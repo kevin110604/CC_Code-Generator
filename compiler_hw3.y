@@ -64,7 +64,7 @@
     int glo_var_assi_flag = 0;
     char glo_var_value[64];
     int loc_var_assi_flag = 0;
-    char loc_var_value[64];
+    char loc_var_value[128];
     int print_id_index;
     char print_id_type[8];
     int print_const_flag = 0;
@@ -78,6 +78,14 @@
     char expr_buf[128];
     int expr_fmode = 0;
     int assi_flag = 0;      //used in expr
+    int selection_flag = 0;
+    int if_else_flag = 0;
+    int if_end_with_else_flag = 0;
+    int if_end_flag = 0;
+    int else_begin_flag = 0;
+    int else_end_flag = 0;
+    int if_flag = 0;
+    int label_index = 0, current_label_index;
 %}
 
 /* Use variable or self-defined structure to represent
@@ -337,7 +345,7 @@ expression_stat:
     ;
 
 expr:
-      assign_expr           { gflag = 6; }
+      assign_expr           { gflag = 6; puts("expr"); }
     | expr "," assign_expr
     ;
 
@@ -371,16 +379,16 @@ logical_and_expr:
 
 equality_expression:
       relational_expression
-    | equality_expression EQ relational_expression      { expr_flag[13] = 1; }
-    | equality_expression NE relational_expression      { expr_flag[14] = 1; }
+    | equality_expression EQ relational_expression      { strcat(expr_buf, "== "); }
+    | equality_expression NE relational_expression      { strcat(expr_buf, "!= "); }
     ;
 
 relational_expression:
       additive_expression
-    | relational_expression "<" additive_expression     { expr_flag[9] = 1; }
-    | relational_expression ">" additive_expression     { expr_flag[10] = 1; }
-    | relational_expression LTE additive_expression     { expr_flag[11] = 1; }
-    | relational_expression MTE additive_expression     { expr_flag[12] = 1; }
+    | relational_expression "<" additive_expression     { strcat(expr_buf, "< "); }
+    | relational_expression ">" additive_expression     { strcat(expr_buf, "> "); }
+    | relational_expression LTE additive_expression     { strcat(expr_buf, "<= "); }
+    | relational_expression MTE additive_expression     { strcat(expr_buf, ">= "); }
     ;
 
 additive_expression:
@@ -488,8 +496,20 @@ print_func:
     ;
 
 selection_stat:
-      IF "(" expr ")" compound_stat ELSE stat
-    | IF "(" expr ")" compound_stat 
+      if_else_stat          { selection_flag = 1; else_end_flag = 1; puts("else scope end"); }
+    | if_stat 
+    ;
+
+if_else_stat:
+      IF "(" expr ")"       { if_else_flag = 1; /* puts("if _else"); */ }
+      compound_stat         { selection_flag = 1; if_end_with_else_flag = 1; }
+      ELSE                  { selection_flag = 1; else_begin_flag = 1; puts("else begin"); }
+      stat                  { /* selection_flag = 1; else_end_flag = 1;  puts("else scope end"); */ }
+    ;
+
+if_stat:
+      IF "(" expr ")"       { if_flag = 1; }
+      compound_stat         { selection_flag = 1; if_end_flag = 1; }
     ;
 
 loop_stat:
@@ -553,11 +573,13 @@ void yyerror(char *s)
         return;
     }
     
-    printf("\n|-----------------------------------------------|\n");
-    printf("| Error found in line %d: %s\n", yylineno, code_line);
-    printf("| %s", s);
-    printf("\n| Unmatched token: %s", yytext);
-    printf("\n|-----------------------------------------------|\n\n");
+    if (error_type_flag) {
+        printf("\n|-----------------------------------------------|\n");
+        printf("| Error found in line %d: %s\n", yylineno, code_line);
+        printf("| %s", s);
+        printf("\n| Unmatched token: %s", yytext);
+        printf("\n|-----------------------------------------------|\n\n");
+    }
 
     if (syntax_error_flag) {
         printf("\n|-----------------------------------------------|\n");
@@ -756,7 +778,7 @@ void parse_newline()
             dump_symbol(); 
             rcb_flag = 0; 
         }
-        if (error_type_flag == 1) {
+        if (error_type_flag || syntax_error_flag) {
             yyerror(error_msg);
         }
         error_type_flag = 0;
@@ -799,9 +821,30 @@ void parse_func_attr(char *s, char r[])
  * 4: return
  * 5: end function
  * 6: expr
+ * 7: if else
  */
 void gencode_function() 
 {
+    if (selection_flag ) {
+        
+        if (if_end_with_else_flag) {
+            fprintf(file, "\tgoto Exit_%d\n", current_label_index);
+            if_end_with_else_flag = 0;
+        }
+
+        if (if_end_flag) {
+            fprintf(file, "\tExit_%d:\n", current_label_index);
+            current_label_index--;
+            if_end_flag = 0;
+        }
+
+        if (else_begin_flag) {
+            fprintf(file, "\tLabel_%d:\n", current_label_index);
+            else_begin_flag = 0;
+        }
+
+    }
+
     if (gflag == 0) {
         symbol_t node = find_last(scope);
         fprintf(file, ".field public static ");
@@ -848,13 +891,18 @@ void gencode_function()
     }
     else if (gflag == 2) {
         symbol_t node = find_last(scope);
+        //printf("node=%s, index=%d, type=%s, flag=%d\n", node.name, node.index, node.type, loc_var_assi_flag);
         if (loc_var_assi_flag) {
+            printf("%s\n", loc_var_value);
 
-            if (strcmp(node.type, "string") == 0)
+            if (strcmp(node.type, "string") == 0) {
                 fprintf(file, "\tldc \"%s\"\n", loc_var_value);
-            else
+            }
+            else {
+                //printf("here~~~~~~~~\n");
                 fprintf(file, "\tldc %s\n", loc_var_value);
-            
+                //printf("else end~~~~~~~~\n");
+            }
                 
             loc_var_assi_flag = 0;
         }
@@ -872,7 +920,7 @@ void gencode_function()
             fprintf(file, "\tastore %d\n", node.index);
         else if (strcmp(node.type, "bool") == 0)
             fprintf(file, "\tistore %d\n", node.index);
-
+        strcpy(loc_var_value, "");
     }
     else if (gflag == 3) {
         if (print_const_flag) {
@@ -944,7 +992,7 @@ void gencode_function()
             fprintf(file, ".end method\n");
     }
     else if (gflag == 6) {
-        printf("%s\n", expr_buf);
+        //printf("%s\n", expr_buf);
 
         int record_flag = 0, action_flag = 0, recognition_flag = 1;
         int j = 0;
@@ -1000,12 +1048,12 @@ void gencode_function()
                 }
                 else if (action == 'V') {
                     
-                    if (c_next == '=') {
+                    if (assi_flag && c_next == '=') {
                         //assi_flag = 1;
                         strcpy(assi_var, record);
                     }
                     /* += -= *= /= %= */
-                    else if (expr_buf[i+2] == '=') {
+                    else if (assi_flag && expr_buf[i+2] == '=') {
                         strcpy(assi_var, record);
                         symbol_t node = find_symbol(assi_var, 1);
 
@@ -1099,6 +1147,61 @@ void gencode_function()
                 }
                 i++; // increment two !!
             }
+
+            if (if_else_flag) {
+                if (c == '>' && c_next == ' ') {
+                    fprintf(file, "\tisub\n");
+                    fprintf(file, "\tifle Label_%d\n", label_index);
+                    current_label_index = label_index;
+                    label_index++;
+                    i++; // increment two!!
+                    if_else_flag = 0;
+                }
+                else if (c == '<' && c_next == ' ') {
+                    fprintf(file, "\tisub\n");
+                    fprintf(file, "\tifge Label_%d\n", label_index);
+                    current_label_index = label_index;
+                    label_index++;
+                    i++; // increment two!!
+                    if_else_flag = 0;
+                }
+                else if (c == '>' && c_next == '=') {
+                    fprintf(file, "\tisub\n");
+                    fprintf(file, "\tiflt Label_%d\n", label_index);
+                    current_label_index = label_index;
+                    label_index++;
+                    i++; // increment two!!
+                    if_else_flag = 0;
+                }
+                else if (c == '<' && c_next == '=') {
+                    fprintf(file, "\tisub\n");
+                    fprintf(file, "\tifgt Label_%d\n", label_index);
+                    current_label_index = label_index;
+                    label_index++;
+                    i++; // increment two!!
+                    if_else_flag = 0;
+                }
+                else if (c == '=' && c_next == '=') {
+                    fprintf(file, "\tisub\n");
+                    fprintf(file, "\tifne Label_%d\n", label_index);
+                    current_label_index = label_index;
+                    label_index++;
+                    i++; // increment two!!
+                    if_else_flag = 0;
+                }
+                else if (c == '!' && c_next == '=') {
+                    fprintf(file, "\tisub\n");
+                    fprintf(file, "\tifeq Label_%d\n", label_index);
+                    current_label_index = label_index;
+                    label_index++;
+                    i++; // increment two!!
+                    if_else_flag = 0;
+                }
+            }
+
+            if (if_flag) {
+                if_flag = 0;
+            }
         } //end for
 
         if (assi_flag) {
@@ -1157,6 +1260,14 @@ void gencode_function()
         strcpy(expr_buf, "");
     } // end if (gflag == 6)
 
+    if (selection_flag) {
+        if (else_end_flag) {
+            fprintf(file, "\tExit_%d:\n", current_label_index);
+            current_label_index--;
+            else_end_flag = 0;
+        }
+    }
 
+    selection_flag = 0;
     gflag = -1;
 }
