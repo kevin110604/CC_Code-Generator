@@ -861,6 +861,7 @@ void gencode_function()
         fprintf(file, "\tLoop_%d:\n", loop_label_index);
     }
 
+    //printf("gflag=%d\n", gflag);
     if (gflag == 0) {
         symbol_t node = find_last(scope);
         fprintf(file, ".field public static ");
@@ -908,35 +909,175 @@ void gencode_function()
     }
     else if (gflag == 2) {
         symbol_t node = find_last(scope);
-        //printf("node=%s, index=%d, type=%s, flag=%d\n", node.name, node.index, node.type, loc_var_assi_flag);
-        if (loc_var_assi_flag) {
-            //printf("%s\n", loc_var_value);
 
-            if (strcmp(node.type, "string") == 0) {
-                fprintf(file, "\tldc \"%s\"\n", loc_var_value);
-            }
-            else {
-                //printf("here~~~~~~~~\n");
-                fprintf(file, "\tldc %s\n", loc_var_value);
-                //printf("else end~~~~~~~~\n");
-            }
+
+        if (loc_var_assi_flag) {
+            int record_flag = 0, action_flag = 0, recognition_flag = 1;
+            int j = 0;
+            char record[32];
+            char action = ' ', c, c_next;
+            char assi_var[32];
+            symbol_t node;
+            int i, len = strlen(expr_buf);
+
+            for (i = 0; i < len; i++) {
+                c = expr_buf[i];
+                c_next = expr_buf[i+1];
+                //printf(":::::::%c\n", c);
+
+                if (recognition_flag) {
+                    if (c == 'I' || c == 'F') {
+                        action = c;
+                        record_flag = 1;
+                        recognition_flag = 0;
+                        continue;
+                    }
+                    if (c == 'V') {
+                        action = 'V';
+                        record_flag = 1;
+                        recognition_flag = 0;
+                        continue;
+                    }
+                }
+
+
+                if (record_flag) {
+                    /* encounter a white space, go to action section */
+                    if (c == ' ') {
+                        record[j] = '\0';
+                        j = 0;
+                        recognition_flag = 1;
+                        record_flag = 0;
+                        action_flag = 1;
+                    }
+                    else {
+                        record[j] = c;
+                        j++;
+                    }
+                }
+
+                if (action_flag) {
+                    if (action == 'I') {
+                        fprintf(file, "\tldc %s\n", record);
+                        if (expr_fmode)
+                            fprintf(file, "\ti2f\n");
+                    }
+                    else if (action == 'F') {
+                        fprintf(file, "\tldc %s\n", record);
+                    }
+                    else if (action == 'V') {
+                        node = find_symbol(record, 0);
+
+                        if (strcmp(node.type, "int") == 0) {
+                            //puts("hey~~~~~~");
+                            fprintf(file, "\tiload %d\n", node.index);
+                            //puts("end~~~~~~~~~~~~");
+                            if (expr_fmode)
+                                fprintf(file, "\ti2f\n");
+                        }
+                        else if (strcmp(node.type, "float") == 0)
+                            fprintf(file, "\tfload %d\n", node.index);
+                    }
+                    action_flag = 0;
+                }
+
                 
+                if (expr_fmode) {
+                    if (c == '+' && c_next == ' ') {
+                        fprintf(file, "\tfadd\n");
+                    }
+                    else if (c == '-' && c_next == ' ') {
+                        fprintf(file, "\tfsub\n");
+                    }
+                    else if (c == '*' && c_next == ' ') {
+                        fprintf(file, "\tfmul\n");
+                    }
+                    else if (c == '/' && c_next == ' ') {
+                        fprintf(file, "\tfdiv\n");
+                    }
+                    else if (c == '%' && c_next == ' ') {
+                        yyerror("mod float");
+                    }
+                }
+                else {
+                    if (c == '+' && c_next == ' ') {
+                        fprintf(file, "\tiadd\n");
+                    }
+                    else if (c == '-' && c_next == ' ') {
+                        fprintf(file, "\tisub\n");
+                    }
+                    else if (c == '*' && c_next == ' ') {
+                        fprintf(file, "\timul\n");
+                    }
+                    else if (c == '/' && c_next == ' ') {
+                        fprintf(file, "\tidiv\n");
+                    }
+                    else if (c == '%' && c_next == ' ') {
+                        fprintf(file, "\tirem\n");
+                    }
+                }
+                
+                /* post ++, -- */
+                if (c == '+' && c_next == '+') {
+                    if (strcmp(node.type, "int") == 0) {
+                        fprintf(file, "\tiload %d\n", node.index);
+                        fprintf(file, "\tldc 1\n");
+                        fprintf(file, "\tiadd\n");
+                        fprintf(file, "\tistore %d\n", node.index);
+                    }
+                    else if (strcmp(node.type, "float") == 0) {
+                        fprintf(file, "\tfload %d\n", node.index);
+                        fprintf(file, "\tldc 1.0\n");
+                        fprintf(file, "\tfadd\n");
+                        fprintf(file, "\tfstore %d\n", node.index);
+                    }
+                    i++; // increment two !!
+                }
+                else if (c == '-' && c_next == '-') {
+                    if (strcmp(node.type, "int") == 0) {
+                        fprintf(file, "\tiload %d\n", node.index);
+                        fprintf(file, "\tldc 1\n");
+                        fprintf(file, "\tisub\n");
+                        fprintf(file, "\tistore %d\n", node.index);
+                    }
+                    else if (strcmp(node.type, "float") == 0) {
+                        fprintf(file, "\tfload %d\n", node.index);
+                        fprintf(file, "\tldc 1.0\n");
+                        fprintf(file, "\tfsub\n");
+                        fprintf(file, "\tfstore %d\n", node.index);
+                    }
+                    i++; // increment two !!
+                }
+            } // end for
             loc_var_assi_flag = 0;
+            
         }
         else {
             if (strcmp(node.type, "int") == 0)
                 fprintf(file, "\tldc 0\n");         // defaut to init it to 0
-            else if (strcmp(node.type, "float") == 0)
+            else if (strcmp(node.type, "float") == 0) {
                 fprintf(file, "\tldc 0.0\n");       // defaut to init it to 0.0
+                expr_fmode = 1;
+            }
         }
+
+
+
         if (strcmp(node.type, "int") == 0)    
             fprintf(file, "\tistore %d\n", node.index);
-        else if (strcmp(node.type, "float") == 0)
+        else if (strcmp(node.type, "float") == 0) {
+            if (!expr_fmode) {
+                fprintf(file, "\ti2f\n");
+            }
+            
             fprintf(file, "\tfstore %d\n", node.index);
+        }
         else if (strcmp(node.type, "string") == 0)
             fprintf(file, "\tastore %d\n", node.index);
         else if (strcmp(node.type, "bool") == 0)
             fprintf(file, "\tistore %d\n", node.index);
+        
+        expr_fmode = 0;
         strcpy(loc_var_value, "");
     }
     else if (gflag == 3) {

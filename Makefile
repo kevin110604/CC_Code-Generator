@@ -3,7 +3,7 @@ YFLAG = -d
 FNAME = compiler_hw3
 PARSER = myparser
 OBJECT = lex.yy.c y.tab.c y.tab.h ${FNAME}.j ${FNAME}.class
-INPUT_FILE = example_input/basic_if_statement.c
+INPUT_FILE = example_input/expr.c
 
 all: clean y.tab.o lex.yy.o
 	@${CC} -o ${PARSER} y.tab.o lex.yy.o
