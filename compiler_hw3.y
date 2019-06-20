@@ -19,6 +19,16 @@
         symbol_t *head;
     } table_t;
 
+    typedef struct jjjjj {
+        int index;
+        int with_else_flag;
+        struct jjjjj *next;
+    } selection_t;
+
+    typedef struct {
+        selection_t *head;
+    } selection_stack_t;
+
     extern int yylineno;
     extern int yylex();
     extern char *yytext;                // Get current token from lex
@@ -45,6 +55,9 @@
     symbol_t find_last(int find_scope);
     symbol_t find_symbol(char *str, int up_to_scope);
     void parse_func_attr(char *s, char r[]);
+    void selection_end();
+    void push_selection();
+    selection_t pop_selection();
 
     /* global variables */
     table_t *t[32];                     // symbol table
@@ -71,21 +84,19 @@
     char print_const_value[64];
     char print_const_type[32];
     int return_void_flag = 0;
-    int expr_flag[23] = {0};
-    char expr_queue[32][32];
-    int expr_queue_index = 0;
     char expr_const[32];
-    char expr_buf[128];
+    char expr_buf[128] = "";
     int expr_fmode = 0;
     int assi_flag = 0;      //used in expr
     int selection_flag = 0;
     int if_else_flag = 0;
-    int if_end_with_else_flag = 0;
     int if_end_flag = 0;
     int else_begin_flag = 0;
     int else_end_flag = 0;
     int if_flag = 0;
+    int selection_end_flag = 0;
     int label_index = 0, current_label_index;
+    selection_stack_t *ss;
 %}
 
 /* Use variable or self-defined structure to represent
@@ -229,16 +240,34 @@ initializer:
     ;
 
 const: 
-      I_CONST               { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1);
+      I_CONST               { strcpy(glo_var_value, $1); 
+                              strcpy(loc_var_value, $1); 
+                              //printf("%s~~~~~~~~~~~~~~~~\n", $1);
+                              
+                              strcpy(print_const_value, $1); 
                               strcpy(print_const_type, "I"); 
-                              strcpy(expr_const, "I"); strcat(expr_const, $1); }
-    | F_CONST               { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1);
+
+                              strcpy(expr_const, "I"); 
+                              strcat(expr_const, $1); 
+                            }
+    | F_CONST               { strcpy(glo_var_value, $1); 
+                              strcpy(loc_var_value, $1); 
+                              
+                              strcpy(print_const_value, $1); 
                               strcpy(print_const_type, "F"); 
-                              strcpy(expr_const, "F"); strcat(expr_const, $1); expr_fmode = 1; }
-    | STR_CONST             { strcpy(glo_var_value, $1); strcpy(loc_var_value, $1); strcpy(print_const_value, $1); 
-                              strcpy(print_const_type, "Ljava/lang/String;"); }
-    | TRUE                  { strcpy(glo_var_value, "1"); strcpy(loc_var_value, "1"); strcpy(print_const_value, "1"); }
-    | FALSE                 { strcpy(glo_var_value, "0"); strcpy(loc_var_value, "0"); strcpy(print_const_value, "0"); }
+                              
+                              strcpy(expr_const, "F"); 
+                              strcat(expr_const, $1); 
+                              expr_fmode = 1; 
+                            }
+    | STR_CONST             { strcpy(glo_var_value, $1); 
+                              strcpy(loc_var_value, $1); 
+                              
+                              strcpy(print_const_value, $1); 
+                              strcpy(print_const_type, "Ljava/lang/String;"); 
+                            }
+    | TRUE                  { strcpy(glo_var_value, "1"); strcpy(loc_var_value, "1"); }
+    | FALSE                 { strcpy(glo_var_value, "0"); strcpy(loc_var_value, "0"); }
     ;
 
 func_def:
@@ -334,7 +363,7 @@ stat:
       compound_stat         
     | expression_stat       
     | print_func            
-    | selection_stat        
+    | selection_stat        { selection_flag = 1; selection_end_flag = 1; selection_end(); /* puts("selection scope end"); */ }
     | loop_stat             
     | jump_stat             
     ;
@@ -345,7 +374,7 @@ expression_stat:
     ;
 
 expr:
-      assign_expr           { gflag = 6; puts("expr"); }
+      assign_expr           { gflag = 6; }
     | expr "," assign_expr
     ;
 
@@ -355,12 +384,12 @@ assign_expr:
     ;
 
 assign_op:
-      "="                   { expr_flag[17] = 1; strcat(expr_buf, "= "); assi_flag = 1; }
-    | MULASGN               { expr_flag[18] = 1; strcat(expr_buf, "*= "); assi_flag = 4; }
-    | DIVASGN               { expr_flag[19] = 1; strcat(expr_buf, "/= "); assi_flag = 5; }
-    | MODASGN               { expr_flag[20] = 1; strcat(expr_buf, "%= "); assi_flag = 6; }
-    | ADDASGN               { expr_flag[21] = 1; strcat(expr_buf, "+= "); assi_flag = 2; }
-    | SUBASGN               { expr_flag[22] = 1; strcat(expr_buf, "-= "); assi_flag = 3; }
+      "="                   { strcat(expr_buf, "= "); assi_flag = 1; }
+    | MULASGN               { strcat(expr_buf, "*= "); assi_flag = 4; }
+    | DIVASGN               { strcat(expr_buf, "/= "); assi_flag = 5; }
+    | MODASGN               { strcat(expr_buf, "%= "); assi_flag = 6; }
+    | ADDASGN               { strcat(expr_buf, "+= "); assi_flag = 2; }
+    | SUBASGN               { strcat(expr_buf, "-= "); assi_flag = 3; }
     ;
 
 conditional_expr:
@@ -369,12 +398,12 @@ conditional_expr:
 
 logical_or_expr:
       logical_and_expr
-    | logical_or_expr OR logical_and_expr               { expr_flag[16] = 1; }
+    | logical_or_expr OR logical_and_expr
     ;
 
 logical_and_expr:
       equality_expression
-    | logical_and_expr AND equality_expression          { expr_flag[15] = 1; }
+    | logical_and_expr AND equality_expression
     ;
 
 equality_expression:
@@ -393,16 +422,16 @@ relational_expression:
 
 additive_expression:
       multiplicative_expression
-    | additive_expression "+" multiplicative_expression { expr_flag[7] = 1; strcat(expr_buf, "+ "); }
-    | additive_expression "-" multiplicative_expression { expr_flag[8] = 1; strcat(expr_buf, "- "); }
+    | additive_expression "+" multiplicative_expression { strcat(expr_buf, "+ "); }
+    | additive_expression "-" multiplicative_expression { strcat(expr_buf, "- "); }
     ;
 
 
 multiplicative_expression:
       cast_expression
-    | multiplicative_expression "*" cast_expression     { expr_flag[4] = 1; strcat(expr_buf, "* "); }
-    | multiplicative_expression "/" cast_expression     { expr_flag[5] = 1; strcat(expr_buf, "/ "); }
-    | multiplicative_expression "%" cast_expression     { expr_flag[6] = 1; strcat(expr_buf, "% "); }
+    | multiplicative_expression "*" cast_expression     { strcat(expr_buf, "* "); }
+    | multiplicative_expression "/" cast_expression     { strcat(expr_buf, "/ "); }
+    | multiplicative_expression "%" cast_expression     { strcat(expr_buf, "% "); }
     ;
 
 cast_expression:
@@ -412,14 +441,14 @@ cast_expression:
 
 unary_expression:
       postfix_expression
-    | INC unary_expression  { expr_flag[2] = 1; }
-    | DEC unary_expression  { expr_flag[3] = 1; }
+    | INC unary_expression
+    | DEC unary_expression
     | unary_operator cast_expression
     ;
 
 unary_operator:
-      "+"                   { expr_flag[0] = 1; }
-    | "-"                   { expr_flag[1] = 1; }
+      "+"
+    | "-"
     | "!"
     ;
 
@@ -428,14 +457,16 @@ postfix_expression:
     | postfix_expression INC    { strcat(expr_buf, "++ "); }
     | postfix_expression DEC    { strcat(expr_buf, "-- "); }
     | postfix_expression 
-      "(" ")"               { strcpy(error_msg, ""); 
-                              strcat(error_msg, "Undeclared function "); 
-                              strcat(error_msg, func_redecl); }
+      "(" ")"                   { strcpy(error_msg, ""); 
+                                  strcat(error_msg, "Undeclared function "); 
+                                  strcat(error_msg, func_redecl); 
+                                }
     | postfix_expression 
       "(" argument_list_expr 
-      ")"                   { strcpy(error_msg, ""); 
-                              strcat(error_msg, "Undeclared function "); 
-                              strcat(error_msg, func_redecl); }
+      ")"                       { strcpy(error_msg, ""); 
+                                  strcat(error_msg, "Undeclared function "); 
+                                  strcat(error_msg, func_redecl); 
+                                }
     ;
 
 argument_list_expr:
@@ -451,9 +482,6 @@ primary_expr:
                                   strcpy(func_redecl, $1);
                               }
                               else {
-                                  //gflag = 6;
-                                  strcpy(expr_queue[expr_queue_index], $1);
-                                  expr_queue_index++;
                                   strcat(expr_buf, "V");
                                   strcat(expr_buf, $1);
                                   strcat(expr_buf, " ");
@@ -462,11 +490,12 @@ primary_expr:
                                       expr_fmode = 1;
                               } 
                             }
-    | const                 { //gflag = 6; 
-                              strcpy(expr_queue[expr_queue_index], expr_const);
-                              expr_queue_index++;
+    | const                 { 
+                              //if (strcmp(expr_const, "I3") == 0)
+                              //      puts("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
                               strcat(expr_buf, expr_const);
                               strcat(expr_buf, " ");
+                              strcpy(expr_const, "");
                             }
     | "("                   { strcat(expr_buf, "( "); }
       expr 
@@ -496,20 +525,15 @@ print_func:
     ;
 
 selection_stat:
-      if_else_stat          { selection_flag = 1; else_end_flag = 1; puts("else scope end"); }
+      if_stat
     | if_stat 
-    ;
-
-if_else_stat:
-      IF "(" expr ")"       { if_else_flag = 1; /* puts("if _else"); */ }
-      compound_stat         { selection_flag = 1; if_end_with_else_flag = 1; }
-      ELSE                  { selection_flag = 1; else_begin_flag = 1; puts("else begin"); }
-      stat                  { /* selection_flag = 1; else_end_flag = 1;  puts("else scope end"); */ }
+      ELSE                  { selection_flag = 1; else_begin_flag = 1; /* puts("else begin"); */ }
+      stat
     ;
 
 if_stat:
       IF "(" expr ")"       { if_flag = 1; }
-      compound_stat         { selection_flag = 1; if_end_flag = 1; }
+      compound_stat
     ;
 
 loop_stat:
@@ -533,13 +557,14 @@ int main(int argc, char** argv)
     for (int i = 0; i < 32; i++)
         t[i] = NULL;
 
+    ss = malloc(sizeof(selection_stack_t));
+
     yylineno = 0;
 
     file = fopen("compiler_hw3.j", "w");
 
     fprintf(file, ".class public compiler_hw3\n"
                   ".super java/lang/Object\n");
-    //              ".method public static main([Ljava/lang/String;)V\n");
 
     yyparse();
 
@@ -548,7 +573,10 @@ int main(int argc, char** argv)
         printf("\nTotal lines: %d \n", yylineno);
     }
 
-    //fprintf(file, ".end method\n");
+    if (error_type_flag)
+        exit(-1);
+
+    free(ss);
 
     fclose(file);
 
@@ -557,15 +585,6 @@ int main(int argc, char** argv)
 
 void yyerror(char *s)
 {
-    /*
-    printf("\n|-----------------------------------------------|\n");
-    printf("| Error found in line %d: %s\n", yylineno, code_line);
-    printf("| %s", s);
-    printf("\n| Unmatched token: %s", yytext);
-    printf("\n|-----------------------------------------------|\n");
-    exit(-1);
-    */
-
     if (strcmp(s, "syntax error") == 0) {
         syntax_error_flag = 1;
         yylineno++;
@@ -577,7 +596,6 @@ void yyerror(char *s)
         printf("\n|-----------------------------------------------|\n");
         printf("| Error found in line %d: %s\n", yylineno, code_line);
         printf("| %s", s);
-        printf("\n| Unmatched token: %s", yytext);
         printf("\n|-----------------------------------------------|\n\n");
     }
 
@@ -585,8 +603,8 @@ void yyerror(char *s)
         printf("\n|-----------------------------------------------|\n");
         printf("| Error found in line %d: %s\n", yylineno, code_line);
         printf("| syntax error");
-        printf("\n| Unmatched token: %s", yytext);
         printf("\n|-----------------------------------------------|\n\n");
+        exit(-1);
     }
 }
 
@@ -785,6 +803,7 @@ void parse_newline()
         strcpy(error_msg, "");
         strcpy(code_line, "");
     } 
+    //printf("expr_buf=%s~~~~~~~\n", expr_buf);
 }
 
 symbol_t find_last(int find_scope)
@@ -826,20 +845,12 @@ void parse_func_attr(char *s, char r[])
 void gencode_function() 
 {
     if (selection_flag ) {
-        
-        if (if_end_with_else_flag) {
-            fprintf(file, "\tgoto Exit_%d\n", current_label_index);
-            if_end_with_else_flag = 0;
-        }
-
-        if (if_end_flag) {
-            fprintf(file, "\tExit_%d:\n", current_label_index);
-            current_label_index--;
-            if_end_flag = 0;
-        }
 
         if (else_begin_flag) {
-            fprintf(file, "\tLabel_%d:\n", current_label_index);
+
+            ss->head->with_else_flag = 1;           
+            fprintf(file, "\tgoto Exit_%d\n", ss->head->index);
+            fprintf(file, "\tLabel_%d:\n", ss->head->index);
             else_begin_flag = 0;
         }
 
@@ -856,6 +867,7 @@ void gencode_function()
             fprintf(file, "F");
         else if (strcmp(node.type, "bool") == 0)
             fprintf(file, "Z");
+        
         if (glo_var_assi_flag) {
             fprintf(file, " = %s", glo_var_value);
             glo_var_assi_flag = 0;
@@ -893,7 +905,7 @@ void gencode_function()
         symbol_t node = find_last(scope);
         //printf("node=%s, index=%d, type=%s, flag=%d\n", node.name, node.index, node.type, loc_var_assi_flag);
         if (loc_var_assi_flag) {
-            printf("%s\n", loc_var_value);
+            //printf("%s\n", loc_var_value);
 
             if (strcmp(node.type, "string") == 0) {
                 fprintf(file, "\tldc \"%s\"\n", loc_var_value);
@@ -930,11 +942,14 @@ void gencode_function()
             }
             else
                 fprintf(file, "\tldc %s\n", print_const_value);
+            
             fprintf(file, "\tgetstatic java/lang/System/out Ljava/io/PrintStream;\n"
 	                  "\tswap\n"
 	                  "\tinvokevirtual java/io/PrintStream/println");
             fprintf(file, "(%s)", print_const_type);
             fprintf(file, "V\n");
+            strcpy(print_const_value, "");
+            strcpy(print_const_type, "");
             print_const_flag = 0;
         }
         else {
@@ -1005,6 +1020,7 @@ void gencode_function()
         for (i = 0; i < len; i++) {
             c = expr_buf[i];
             c_next = expr_buf[i+1];
+            //printf(":::::::%c\n", c);
 
             if (recognition_flag) {
                 if (c == 'I' || c == 'F') {
@@ -1024,7 +1040,7 @@ void gencode_function()
 
             if (record_flag) {
                 /* encounter a white space, go to action section */
-                if (expr_buf[i] == ' ') {
+                if (c == ' ') {
                     record[j] = '\0';
                     j = 0;
                     recognition_flag = 1;
@@ -1032,7 +1048,7 @@ void gencode_function()
                     action_flag = 1;
                 }
                 else {
-                    record[j] = expr_buf[i];
+                    record[j] = c;
                     j++;
                 }
             }
@@ -1065,10 +1081,12 @@ void gencode_function()
                         }
                     }
                     else {
-                        node = find_symbol(record, scope);
+                        node = find_symbol(record, 0);
 
                         if (strcmp(node.type, "int") == 0) {
+                            //puts("hey~~~~~~");
                             fprintf(file, "\tiload %d\n", node.index);
+                            //puts("end~~~~~~~~~~~~");
                             if (expr_fmode)
                                 fprintf(file, "\ti2f\n");
                         }
@@ -1148,60 +1166,63 @@ void gencode_function()
                 i++; // increment two !!
             }
 
-            if (if_else_flag) {
+            if (if_flag) {
                 if (c == '>' && c_next == ' ') {
                     fprintf(file, "\tisub\n");
                     fprintf(file, "\tifle Label_%d\n", label_index);
-                    current_label_index = label_index;
-                    label_index++;
+                    //current_label_index = label_index;
+                    //label_index++;
+                    push_selection();
                     i++; // increment two!!
-                    if_else_flag = 0;
+                    if_flag = 0;
                 }
                 else if (c == '<' && c_next == ' ') {
                     fprintf(file, "\tisub\n");
                     fprintf(file, "\tifge Label_%d\n", label_index);
-                    current_label_index = label_index;
-                    label_index++;
+                    //current_label_index = label_index;
+                    //label_index++;
+                    push_selection();
                     i++; // increment two!!
-                    if_else_flag = 0;
+                    if_flag = 0;
                 }
                 else if (c == '>' && c_next == '=') {
                     fprintf(file, "\tisub\n");
                     fprintf(file, "\tiflt Label_%d\n", label_index);
-                    current_label_index = label_index;
-                    label_index++;
+                    //current_label_index = label_index;
+                    //label_index++;
+                    push_selection();
                     i++; // increment two!!
-                    if_else_flag = 0;
+                    if_flag = 0;
                 }
                 else if (c == '<' && c_next == '=') {
                     fprintf(file, "\tisub\n");
                     fprintf(file, "\tifgt Label_%d\n", label_index);
-                    current_label_index = label_index;
-                    label_index++;
+                    //current_label_index = label_index;
+                    //label_index++;
+                    push_selection();
                     i++; // increment two!!
-                    if_else_flag = 0;
+                    if_flag = 0;
                 }
                 else if (c == '=' && c_next == '=') {
                     fprintf(file, "\tisub\n");
                     fprintf(file, "\tifne Label_%d\n", label_index);
-                    current_label_index = label_index;
-                    label_index++;
+                    //current_label_index = label_index;
+                    //label_index++;
+                    push_selection();
                     i++; // increment two!!
-                    if_else_flag = 0;
+                    if_flag = 0;
                 }
                 else if (c == '!' && c_next == '=') {
                     fprintf(file, "\tisub\n");
                     fprintf(file, "\tifeq Label_%d\n", label_index);
-                    current_label_index = label_index;
-                    label_index++;
+                    //current_label_index = label_index;
+                    //label_index++;
+                    push_selection();
                     i++; // increment two!!
-                    if_else_flag = 0;
+                    if_flag = 0;
                 }
             }
 
-            if (if_flag) {
-                if_flag = 0;
-            }
         } //end for
 
         if (assi_flag) {
@@ -1257,17 +1278,62 @@ void gencode_function()
             expr_fmode = 0;
         } //end if (assi_flag)
 
-        strcpy(expr_buf, "");
+        //strcpy(expr_buf, "");
     } // end if (gflag == 6)
 
     if (selection_flag) {
-        if (else_end_flag) {
-            fprintf(file, "\tExit_%d:\n", current_label_index);
-            current_label_index--;
-            else_end_flag = 0;
-        }
+        
     }
 
+    strcpy(expr_buf, "");
     selection_flag = 0;
     gflag = -1;
+}
+
+void selection_end()
+{
+    selection_t node = pop_selection();
+    if (selection_end_flag && node.with_else_flag) {
+        fprintf(file, "\tExit_%d:\n", node.index);
+        selection_end_flag = 0;
+    }
+    else if (selection_end_flag && !node.with_else_flag) {
+        fprintf(file, "\tLabel_%d:\n", node.index);
+        selection_end_flag = 0;
+    }
+}
+
+void push_selection()
+{
+    //puts("!!!!!!!!!!!!!!!!!push_selection");
+    //printf("~~~~~~~~~~~~~~~~~scope=%d\n", scope);
+    selection_t *nw; 
+
+    if ( ss == NULL )
+        return;
+    nw = malloc(sizeof(selection_t));
+    if ( nw == NULL )
+        return;
+    nw->index = label_index;
+    nw->with_else_flag = 0;
+    label_index++;
+
+    nw->next = ss->head;
+    ss->head = nw;
+}
+
+selection_t pop_selection()
+{
+    selection_t node, *p, empty;
+
+    if ( ss == NULL )
+        return empty;
+    if ( ss->head == NULL )
+        return empty;
+
+    p = ss->head;
+    ss->head = p->next;
+    node = *p;
+    free(p);
+    return node;
 }
