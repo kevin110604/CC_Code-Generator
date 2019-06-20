@@ -96,6 +96,10 @@
     int if_flag = 0;
     int selection_end_flag = 0;
     int label_index = 0, current_label_index;
+    int while_flag = 0;
+    int loop_end_flag = 0;
+    int loop_label_index = 0;
+    int comparison_flag = 0;
     selection_stack_t *ss;
 %}
 
@@ -364,7 +368,7 @@ stat:
     | expression_stat       
     | print_func            
     | selection_stat        { selection_flag = 1; selection_end_flag = 1; selection_end(); /* puts("selection scope end"); */ }
-    | loop_stat             
+    | loop_stat             { loop_end_flag = 1; }
     | jump_stat             
     ;
 
@@ -532,15 +536,12 @@ selection_stat:
     ;
 
 if_stat:
-      IF "(" expr ")"       { if_flag = 1; }
+      IF "(" expr ")"       { if_flag = 1; comparison_flag = 1; }
       compound_stat
     ;
 
 loop_stat:
-      WHILE                 
-      "("                   
-      expr
-      ")"                   
+      WHILE "(" expr ")"    { while_flag = 1; comparison_flag = 1; }
       stat
     ;
 
@@ -840,7 +841,7 @@ void parse_func_attr(char *s, char r[])
  * 4: return
  * 5: end function
  * 6: expr
- * 7: if else
+ * 7: 
  */
 void gencode_function() 
 {
@@ -854,6 +855,10 @@ void gencode_function()
             else_begin_flag = 0;
         }
 
+    }
+
+    if (while_flag) {
+        fprintf(file, "\tLoop_%d:\n", loop_label_index);
     }
 
     if (gflag == 0) {
@@ -1247,10 +1252,115 @@ void gencode_function()
                 }
             }
 
+            if (while_flag) {
+                if (c == '>' && c_next == ' ') {
+                    if (expr_fmode) {
+                        fprintf(file, "\tfcmpg\n");
+                        fprintf(file, "\tifgt WLabel_%d\n", loop_label_index);
+                        fprintf(file, "\tgoto WExit_%d\n", loop_label_index);
+                        fprintf(file, "\tWLabel_%d:\n", loop_label_index);
+                    }
+                    else {
+                        fprintf(file, "\tisub\n");
+                        fprintf(file, "\tifgt WLabel_%d\n", loop_label_index);
+                        fprintf(file, "\tgoto WExit_%d\n", loop_label_index);
+                        fprintf(file, "\tWLabel_%d:\n", loop_label_index);
+                    }
+                    loop_label_index++;
+                    i++; // increment two!!
+                    while_flag = 0;
+                }
+                else if (c == '<' && c_next == ' ') {
+                    if (expr_fmode) {
+                        fprintf(file, "\tfcmpg\n");
+                        fprintf(file, "\tiflt WLabel_%d\n", loop_label_index);
+                        fprintf(file, "\tgoto WExit_%d\n", loop_label_index);
+                        fprintf(file, "\tWLabel_%d:\n", loop_label_index);
+                    }
+                    else {
+                        fprintf(file, "\tisub\n");
+                        fprintf(file, "\tiflt WLabel_%d\n", loop_label_index);
+                        fprintf(file, "\tgoto WExit_%d\n", loop_label_index);
+                        fprintf(file, "\tWLabel_%d:\n", loop_label_index);
+                    }
+                    loop_label_index++;
+                    i++; // increment two!!
+                    while_flag = 0;
+                }
+                else if (c == '>' && c_next == '=') {
+                    if (expr_fmode) {
+                        fprintf(file, "\tfcmpg\n");
+                        fprintf(file, "\tifge WLabel_%d\n", loop_label_index);
+                        fprintf(file, "\tgoto WExit_%d\n", loop_label_index);
+                        fprintf(file, "\tWLabel_%d:\n", loop_label_index);
+                    }
+                    else {
+                        fprintf(file, "\tisub\n");
+                        fprintf(file, "\tifge WLabel_%d\n", loop_label_index);
+                        fprintf(file, "\tgoto WExit_%d\n", loop_label_index);
+                        fprintf(file, "\tWLabel_%d:\n", loop_label_index);
+                    }
+                    loop_label_index++;
+                    i++; // increment two!!
+                    while_flag = 0;
+                }
+                else if (c == '<' && c_next == '=') {
+                    if (expr_fmode) {
+                        fprintf(file, "\tfcmpg\n");
+                        fprintf(file, "\tifle WLabel_%d\n", loop_label_index);
+                        fprintf(file, "\tgoto WExit_%d\n", loop_label_index);
+                        fprintf(file, "\tWLabel_%d:\n", loop_label_index);
+                    }
+                    else {
+                        fprintf(file, "\tisub\n");
+                        fprintf(file, "\tifle WLabel_%d\n", loop_label_index);
+                        fprintf(file, "\tgoto WExit_%d\n", loop_label_index);
+                        fprintf(file, "\tWLabel_%d:\n", loop_label_index);
+                    }
+                    loop_label_index++;
+                    i++; // increment two!!
+                    while_flag = 0;
+                }
+                else if (c == '=' && c_next == '=') {
+                    if (expr_fmode) {
+                        fprintf(file, "\tfcmpg\n");
+                        fprintf(file, "\tifeq WLabel_%d\n", loop_label_index);
+                        fprintf(file, "\tgoto WExit_%d\n", loop_label_index);
+                        fprintf(file, "\tWLabel_%d:\n", loop_label_index);
+                    }
+                    else {
+                        fprintf(file, "\tisub\n");
+                        fprintf(file, "\tifeq WLabel_%d\n", loop_label_index);
+                        fprintf(file, "\tgoto WExit_%d\n", loop_label_index);
+                        fprintf(file, "\tWLabel_%d:\n", loop_label_index);
+                    }
+                    loop_label_index++;
+                    i++; // increment two!!
+                    while_flag = 0;
+                }
+                else if (c == '!' && c_next == '=') {
+                    if (expr_fmode) {
+                        fprintf(file, "\tfcmpg\n");
+                        fprintf(file, "\tifne WLabel_%d\n", loop_label_index);
+                        fprintf(file, "\tgoto WExit_%d\n", loop_label_index);
+                        fprintf(file, "\tWLabel_%d:\n", loop_label_index);
+                    }
+                    else {
+                        fprintf(file, "\tisub\n");
+                        fprintf(file, "\tifne WLabel_%d\n", loop_label_index);
+                        fprintf(file, "\tgoto WExit_%d\n", loop_label_index);
+                        fprintf(file, "\tWLabel_%d:\n", loop_label_index);
+                    }
+                    loop_label_index++;
+                    i++; // increment two!!
+                    while_flag = 0;
+                }
+            }
+
         } //end for
 
         if (assi_flag) {
-            symbol_t node = find_symbol(assi_var, scope);
+            symbol_t node = find_symbol(assi_var, 0);
 
             if (expr_fmode) {
                 if (assi_flag == 2) {
@@ -1301,6 +1411,10 @@ void gencode_function()
             assi_flag = 0;
             expr_fmode = 0;
         } //end if (assi_flag)
+        else {
+            if (!comparison_flag)
+                fprintf(file, "\tpop\n");
+        }
 
         //strcpy(expr_buf, "");
     } // end if (gflag == 6)
@@ -1309,6 +1423,14 @@ void gencode_function()
         
     }
 
+    if (loop_end_flag) {
+        loop_label_index--;
+        fprintf(file, "\tgoto Loop_%d\n", loop_label_index);
+        fprintf(file, "\tWExit_%d:\n", loop_label_index);
+        loop_end_flag = 0;
+    }
+
+    comparison_flag = 0;
     strcpy(expr_buf, "");
     selection_flag = 0;
     gflag = -1;

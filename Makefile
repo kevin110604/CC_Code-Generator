@@ -3,8 +3,9 @@ YFLAG = -d
 FNAME = compiler_hw3
 PARSER = myparser
 OBJECT = lex.yy.c y.tab.c y.tab.h ${FNAME}.j ${FNAME}.class
+INPUT_FILE = example_input/basic_if_statement.c
 
-all: y.tab.o lex.yy.o
+all: clean y.tab.o lex.yy.o
 	@${CC} -o ${PARSER} y.tab.o lex.yy.o
 
 %.o: %.c
@@ -16,15 +17,19 @@ lex.yy.c:
 y.tab.c:
 	@yacc ${YFLAG} ${FNAME}.y
 
-test:
-	@./${PARSER} < ./example_input/basic_declaration.c
+gencode: all
+	@./${PARSER} < ${INPUT_FILE}
+
+java:
+	@echo -e "\n\033[1;33mmain.class output\033[0m"
+	@java -jar jasmin.jar ${FNAME}.j
+	@java ${FNAME}
+
+test: all
+	@./${PARSER} < ${INPUT_FILE}
 	@echo -e "\n\033[1;33mmain.class output\033[0m"
 	@java -jar jasmin.jar ${FNAME}.j
 	@java ${FNAME} 
 
-test2:
-	@./${PARSER} < ./example_input/basic_declaration.c
-
-
 clean:
-	rm -f *.o ${PARSER} ${OBJECT} 
+	@rm -f *.o ${PARSER} ${OBJECT} 
