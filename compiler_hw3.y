@@ -1168,55 +1168,79 @@ void gencode_function()
 
             if (if_flag) {
                 if (c == '>' && c_next == ' ') {
-                    fprintf(file, "\tisub\n");
-                    fprintf(file, "\tifle Label_%d\n", label_index);
-                    //current_label_index = label_index;
-                    //label_index++;
+                    if (expr_fmode) {
+                        fprintf(file, "\tfcmpg\n");
+                        fprintf(file, "\tifle Label_%d\n", label_index);
+                    }
+                    else {
+                        fprintf(file, "\tisub\n");
+                        fprintf(file, "\tifle Label_%d\n", label_index);
+                    }
                     push_selection();
                     i++; // increment two!!
                     if_flag = 0;
                 }
                 else if (c == '<' && c_next == ' ') {
-                    fprintf(file, "\tisub\n");
-                    fprintf(file, "\tifge Label_%d\n", label_index);
-                    //current_label_index = label_index;
-                    //label_index++;
+                    if (expr_fmode) {
+                        fprintf(file, "\tfcmpg\n");
+                        fprintf(file, "\tifge Label_%d\n", label_index);
+                    }
+                    else {
+                        fprintf(file, "\tisub\n");
+                        fprintf(file, "\tifge Label_%d\n", label_index);
+                    }
                     push_selection();
                     i++; // increment two!!
                     if_flag = 0;
                 }
                 else if (c == '>' && c_next == '=') {
-                    fprintf(file, "\tisub\n");
-                    fprintf(file, "\tiflt Label_%d\n", label_index);
-                    //current_label_index = label_index;
-                    //label_index++;
+                    if (expr_fmode) {
+                        fprintf(file, "\tfcmpg\n");
+                        fprintf(file, "\tiflt Label_%d\n", label_index);
+                    }
+                    else {
+                        fprintf(file, "\tisub\n");
+                        fprintf(file, "\tiflt Label_%d\n", label_index);
+                    }
                     push_selection();
                     i++; // increment two!!
                     if_flag = 0;
                 }
                 else if (c == '<' && c_next == '=') {
-                    fprintf(file, "\tisub\n");
-                    fprintf(file, "\tifgt Label_%d\n", label_index);
-                    //current_label_index = label_index;
-                    //label_index++;
+                    if (expr_fmode) {
+                        fprintf(file, "\tfcmpg\n");
+                        fprintf(file, "\tifgt Label_%d\n", label_index);
+                    }
+                    else {
+                        fprintf(file, "\tisub\n");
+                        fprintf(file, "\tifgt Label_%d\n", label_index);
+                    }
                     push_selection();
                     i++; // increment two!!
                     if_flag = 0;
                 }
                 else if (c == '=' && c_next == '=') {
-                    fprintf(file, "\tisub\n");
-                    fprintf(file, "\tifne Label_%d\n", label_index);
-                    //current_label_index = label_index;
-                    //label_index++;
+                    if (expr_fmode) {
+                        fprintf(file, "\tfcmpg\n");
+                        fprintf(file, "\tifne Label_%d\n", label_index);
+                    }
+                    else {
+                        fprintf(file, "\tisub\n");
+                        fprintf(file, "\tifne Label_%d\n", label_index);
+                    }
                     push_selection();
                     i++; // increment two!!
                     if_flag = 0;
                 }
                 else if (c == '!' && c_next == '=') {
-                    fprintf(file, "\tisub\n");
-                    fprintf(file, "\tifeq Label_%d\n", label_index);
-                    //current_label_index = label_index;
-                    //label_index++;
+                    if (expr_fmode) {
+                        fprintf(file, "\tfcmpg\n");
+                        fprintf(file, "\tifeq Label_%d\n", label_index);
+                    }
+                    else {
+                        fprintf(file, "\tisub\n");
+                        fprintf(file, "\tifeq Label_%d\n", label_index);
+                    }
                     push_selection();
                     i++; // increment two!!
                     if_flag = 0;
