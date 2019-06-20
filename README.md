@@ -1,8 +1,8 @@
 # Code Generator
 
-This is a simple compiler to generate Java assembly code (using **Jasmin** Insturctions) with the input **ÎC** program.
+This is a simple compiler to generate Java assembly code (using **Jasmin** insturctions) with the input **Î¼C** program.
 
-## Prerequisite
+## Prerequisites
 
 Lexical analyzer (Flex) and syntax analyzer (Bison):
 
